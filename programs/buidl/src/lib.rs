@@ -15,6 +15,7 @@ pub mod anchor_escrow {
         random_seed: u64,
         initializer_amount: u64,
         taker_amount: u64,
+        validator_total_count: u64
     ) -> Result<()> {
         ctx.accounts.escrow_state.initializer_key = *ctx.accounts.initializer.key;
         ctx.accounts.escrow_state.initializer_deposit_token_account = *ctx
@@ -30,6 +31,7 @@ pub mod anchor_escrow {
         ctx.accounts.escrow_state.initializer_amount = initializer_amount;
         ctx.accounts.escrow_state.taker_amount = taker_amount;
         ctx.accounts.escrow_state.random_seed = random_seed;
+        ctx.accounts.escrow_state.validator_total_count = validator_total_count;
 
         let (_vault_authority, vault_authority_bump) =
             Pubkey::find_program_address(&[AUTHORITY_SEED], ctx.program_id);
@@ -65,6 +67,13 @@ pub mod anchor_escrow {
         )?;
 
         Ok(())
+    }
+
+    pub fn validate_work(ctx: Context<ValidateWork>) -> Result<()> {
+        ctx.accounts.escrow_state.validator_count = ctx.accounts.escrow_state.validator_count.checked_add(1)
+        .unwrap();
+
+            Ok(())
     }
 
     pub fn exchange(ctx: Context<Exchange>) -> Result<()> {
@@ -168,6 +177,21 @@ pub struct Cancel<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ValidateWork<'info> {
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub initializer: AccountInfo<'info>,
+    #[account(
+        mut,
+        // only allow to write to this account if it's part of a certain collection
+        constraint = escrow_state.verified_account == NFTCOLLECTIONID
+    )]
+    pub escrow_state: Box<Account<'info, EscrowState>>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
 pub struct Exchange<'info> {
     /// CHECK: This is not dangerous because we don't read or write from this account
     pub taker: Signer<'info>,
@@ -190,6 +214,7 @@ pub struct Exchange<'info> {
         constraint = escrow_state.initializer_deposit_token_account == *initializer_deposit_token_account.to_account_info().key,
         constraint = escrow_state.initializer_receive_token_account == *initializer_receive_token_account.to_account_info().key,
         constraint = escrow_state.initializer_key == *initializer.key,
+        constraint = escrow_state.validator_total_count == escrow_state.validator_count,
         close = initializer
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
@@ -214,6 +239,9 @@ pub struct EscrowState {
     pub initializer_amount: u64,
     pub taker_amount: u64,
     pub vault_authority_bump: u8,
+    pub verified_account: Pubkey,
+    pub validator_total_count: u64,
+    pub validator_count: u64
 }
 
 impl EscrowState {
