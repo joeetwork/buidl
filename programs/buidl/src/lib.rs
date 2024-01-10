@@ -1,11 +1,15 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, TransferChecked};
+use anchor_spl::metadata::MetadataAccount;
+use mpl_token_metadata;
 
 declare_id!("EuNCzKegGAUCkmSGMtMxe3znUdx4tY82v56mHfaTywZ2");
 
 #[program]
 pub mod anchor_escrow {
+    use std::str::FromStr;
+
     use super::*;
 
     const AUTHORITY_SEED: &[u8] = b"authority";
@@ -32,6 +36,8 @@ pub mod anchor_escrow {
         ctx.accounts.escrow_state.taker_amount = taker_amount;
         ctx.accounts.escrow_state.random_seed = random_seed;
         ctx.accounts.escrow_state.validator_total_count = validator_total_count;
+        ctx.accounts.escrow_state.validator_count = 0;
+        ctx.accounts.escrow_state.verified_account = Pubkey::from_str("5FCpTi8MKyfSk9GXeUhMsfCoi9r72qJnAgkKDCniovNk").unwrap();
 
         let (_vault_authority, vault_authority_bump) =
             Pubkey::find_program_address(&[AUTHORITY_SEED], ctx.program_id);
@@ -43,6 +49,15 @@ pub mod anchor_escrow {
             ctx.accounts.mint.decimals,
         )?;
 
+        Ok(())
+    }
+
+    pub fn initialize_user(
+        ctx: Context<InitializeUser>,
+        username: String
+    ) -> Result<()> {
+        ctx.accounts.user_state.initializer_key = *ctx.accounts.initializer.key;
+        ctx.accounts.user_state.username = username;
         Ok(())
     }
 
@@ -69,7 +84,7 @@ pub mod anchor_escrow {
         Ok(())
     }
 
-    pub fn validate_work(ctx: Context<ValidateWork>) -> Result<()> {
+    pub fn validate_work(ctx: Context<ValidateWork>, _mint: Pubkey, _collection: Pubkey, _update_auth: Pubkey) -> Result<()> {
         ctx.accounts.escrow_state.validator_count = ctx.accounts.escrow_state.validator_count.checked_add(1)
         .unwrap();
 
@@ -137,7 +152,7 @@ pub struct Initialize<'info> {
         seeds = [b"state".as_ref(), &escrow_seed.to_le_bytes()],
         bump,
         payer = initializer,
-        space = EscrowState::space()
+        space = std::mem::size_of::<EscrowState>() + 8
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
     /// CHECK: This is not dangerous because we don't read or write from this account
@@ -147,6 +162,25 @@ pub struct Initialize<'info> {
     pub token_program: Program<'info, Token>,
     /// CHECK: This is not dangerous because we don't read or write from this account
     pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+#[instruction(username: String)]
+pub struct InitializeUser<'info> {
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub initializer: Signer<'info>,
+
+    #[account(
+        init,
+        seeds = [b"user".as_ref(), initializer.key().as_ref()],
+        bump,
+        payer = initializer,
+        space = std::mem::size_of::<UserState>() + 8
+    )]
+    pub user_state: Box<Account<'info, UserState>>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -177,14 +211,31 @@ pub struct Cancel<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(_mint: Pubkey, _collection: Pubkey, _update_auth: Pubkey)]
 pub struct ValidateWork<'info> {
     /// CHECK: This is not dangerous because we don't read or write from this account
     #[account(mut)]
-    pub initializer: AccountInfo<'info>,
+    pub initializer: Signer<'info>,
+
+    // metadata id and mint id will come from the signer 
+    #[account(
+        seeds = [
+            b"metadata", 
+            mpl_token_metadata::ID.as_ref(), 
+            _mint.key().as_ref()
+        ],
+        seeds::program = mpl_token_metadata::ID,
+        bump,
+        constraint = metadata_account.collection.as_ref().unwrap().verified,
+        constraint = metadata_account.collection.as_ref().unwrap().key ==
+        _collection.key()
+    )]
+    pub metadata_account: Account<'info,MetadataAccount>,
+
     #[account(
         mut,
-        // only allow to write to this account if it's part of a certain collection
-        constraint = escrow_state.verified_account == NFTCOLLECTIONID
+        constraint = escrow_state.verified_account == metadata_account.key(),
+        constraint = initializer.key() == _update_auth
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
     /// CHECK: This is not dangerous because we don't read or write from this account
@@ -228,6 +279,12 @@ pub struct Exchange<'info> {
     pub vault_authority: AccountInfo<'info>,
     /// CHECK: This is not dangerous because we don't read or write from this account
     pub token_program: Program<'info, Token>,
+}
+
+#[account]
+pub struct UserState {
+    pub initializer_key: Pubkey,
+    pub username: String,
 }
 
 #[account]

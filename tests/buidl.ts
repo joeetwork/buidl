@@ -142,7 +142,7 @@ describe("anchor-escrow", () => {
     vaultKey = _vaultKey;
 
     const result = await program.methods
-      .initialize(randomSeed, new anchor.BN(initializerAmount), new anchor.BN(takerAmount))
+      .initialize(randomSeed, new anchor.BN(initializerAmount), new anchor.BN(takerAmount), new anchor.BN(2))
       .accounts({
         initializer: initializer.publicKey,
         vaultAuthority: vaultAuthorityKey,
@@ -210,7 +210,7 @@ describe("anchor-escrow", () => {
     await mintTo(connection, initializer, mintA, initializerTokenAccountA, mintAuthority, initializerAmount);
 
     const initializedTx = await program.methods
-      .initialize(randomSeed, new anchor.BN(initializerAmount), new anchor.BN(takerAmount))
+      .initialize(randomSeed, new anchor.BN(initializerAmount), new anchor.BN(takerAmount), new anchor.BN(2))
       .accounts({
         initializer: initializer.publicKey,
         vaultAuthority: vaultAuthorityKey,
