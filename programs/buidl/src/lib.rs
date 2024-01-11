@@ -2,7 +2,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, TransferChecked};
 use anchor_spl::metadata::MetadataAccount;
-use mpl_token_metadata;
 
 declare_id!("EuNCzKegGAUCkmSGMtMxe3znUdx4tY82v56mHfaTywZ2");
 
@@ -37,7 +36,7 @@ pub mod anchor_escrow {
         ctx.accounts.escrow_state.random_seed = random_seed;
         ctx.accounts.escrow_state.validator_total_count = validator_total_count;
         ctx.accounts.escrow_state.validator_count = 0;
-        ctx.accounts.escrow_state.verified_account = Pubkey::from_str("5FCpTi8MKyfSk9GXeUhMsfCoi9r72qJnAgkKDCniovNk").unwrap();
+        ctx.accounts.escrow_state.verified_account = Pubkey::from_str("F17gXajNLmVdMXtCPVpJ8enhwoxtscmDf7fLoJE8vUgw").unwrap();
 
         let (_vault_authority, vault_authority_bump) =
             Pubkey::find_program_address(&[AUTHORITY_SEED], ctx.program_id);
@@ -84,7 +83,41 @@ pub mod anchor_escrow {
         Ok(())
     }
 
-    pub fn validate_work(ctx: Context<ValidateWork>, _mint: Pubkey, _collection: Pubkey, _update_auth: Pubkey) -> Result<()> {
+    pub fn validate_work(ctx: Context<ValidateWork>) -> Result<()> {
+
+        // let nft_token_account = &ctx.accounts.nft_token_account;
+
+        // let user = &ctx.accounts.user;
+
+        // let nft_mint_account = &ctx.accounts.nft_mint;
+
+
+        // assert_eq!(nft_token_account.owner, user.key());
+
+        // assert_eq!(nft_token_account.mint, nft_mint_account.key());
+
+        // assert_eq!(nft_token_account.amount, 1);
+
+        // let (metadata, _) = Pubkey::find_program_address(
+        //     &[
+        //         mpl_token_metadata::accounts::Metadata::PREFIX,
+        //         mpl_token_metadata::ID.as_ref(),
+        //         nft_token_account.mint.as_ref(),
+        //     ],
+        //     &mpl_token_metadata::ID,
+        // );
+        //  metadata;
+
+        //  let mint_metadata= mpl_token_metadata::accounts::Metadata::try_from(&ctx.accounts.metadata_account.to_account_info())?; 
+
+        //  if mint_metadata.collection.is_some() {
+        //     let collection = mint_metadata.collection.unwrap();
+        //     if collection.verified && collection.key ==  ctx.accounts.escrow_state.verified_account {
+        //         ctx.accounts.escrow_state.validator_count = ctx.accounts.escrow_state.validator_count.checked_add(1)
+        //         .unwrap();
+        //     }
+        // } 
+
         ctx.accounts.escrow_state.validator_count = ctx.accounts.escrow_state.validator_count.checked_add(1)
         .unwrap();
 
@@ -211,35 +244,39 @@ pub struct Cancel<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_mint: Pubkey, _collection: Pubkey, _update_auth: Pubkey)]
 pub struct ValidateWork<'info> {
-    /// CHECK: This is not dangerous because we don't read or write from this account
-    #[account(mut)]
-    pub initializer: Signer<'info>,
 
-    // metadata id and mint id will come from the signer 
+    pub user: Signer<'info>,
+
+    pub nft_mint: Account<'info, Mint>,
+
+    pub nft_token_account: Account<'info, TokenAccount>, 
+
     #[account(
         seeds = [
             b"metadata", 
             mpl_token_metadata::ID.as_ref(), 
-            _mint.key().as_ref()
+            nft_mint.key().as_ref()
         ],
         seeds::program = mpl_token_metadata::ID,
         bump,
         constraint = metadata_account.collection.as_ref().unwrap().verified,
         constraint = metadata_account.collection.as_ref().unwrap().key ==
-        _collection.key()
+        escrow_state.verified_account.key(),
+        constraint = nft_token_account.owner == user.key(),
+        constraint = nft_token_account.mint == nft_mint.key(),
+        constraint = nft_token_account.amount == 1
     )]
-    pub metadata_account: Account<'info,MetadataAccount>,
+    pub metadata_account: Account<'info, MetadataAccount>,
 
     #[account(
         mut,
-        constraint = escrow_state.verified_account == metadata_account.key(),
-        constraint = initializer.key() == _update_auth
+        constraint = metadata_account.collection.as_ref().unwrap().key ==
+        escrow_state.verified_account.key()
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
     /// CHECK: This is not dangerous because we don't read or write from this account
-    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
